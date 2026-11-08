@@ -31,7 +31,7 @@ log = logging.getLogger("hsm")
 def build_collectors(cfg: dict, state_dir: Path) -> list:
     collectors = []
     if cfg["journald"]["enabled"]:
-        collectors.append(JournaldCollector(cfg["journald"], state_dir))
+        collectors.append(JournaldCollector(cfg["journald"]))
     if cfg["docker"]["enabled"]:
         collectors.append(DockerCollector(cfg["docker"]))
     if cfg["tailscale"]["enabled"]:

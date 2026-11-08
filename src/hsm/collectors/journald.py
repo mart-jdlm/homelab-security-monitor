@@ -1,6 +1,7 @@
 """journald collector: SSH, sudo and kernel firewall (UFW) messages.
 
-Reads incrementally with `journalctl --cursor-file`, so each run only sees new entries.
+Reads incrementally: the journal cursor of the last entry seen is kept in the collector
+state and passed back with `--after-cursor`, so each run only sees new entries.
 The user running it needs read access to the journal (group `systemd-journal`).
 """
 
@@ -8,7 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 
 from ..events import Event
 from ..util import CollectorError, run_cmd
@@ -57,14 +57,15 @@ def _text(value) -> str:
 class JournaldCollector:
     name = "journald"
 
-    def __init__(self, cfg: dict, state_dir: Path, runner=run_cmd):
-        self.cursor_file = state_dir / "journal.cursor"
+    def __init__(self, cfg: dict, runner=run_cmd):
         self.lookback = cfg.get("first_run_lookback", "1h")
         self.runner = runner
 
     def collect(self, state: dict, now: float) -> list[Event]:
-        cmd = ["journalctl", "-o", "json", "--no-pager", "-q", f"--cursor-file={self.cursor_file}"]
-        if not self.cursor_file.exists():
+        cmd = ["journalctl", "-o", "json", "--no-pager", "-q"]
+        if state.get("cursor"):
+            cmd.append(f"--after-cursor={state['cursor']}")
+        else:  # first run: bounded lookback (journalctl forbids combining --since with a cursor)
             cmd.append(f"--since=-{self.lookback}")
         output = self.runner(cmd + MATCHES, 60)
         events: list[Event] = []
@@ -73,6 +74,8 @@ class JournaldCollector:
                 entry = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise CollectorError(f"unreadable journalctl output: {line[:80]!r}") from exc
+            if entry.get("__CURSOR"):
+                state["cursor"] = entry["__CURSOR"]
             message = _text(entry.get("MESSAGE"))
             parsed = parse_message(entry.get("SYSLOG_IDENTIFIER", ""), message)
             if parsed is None:

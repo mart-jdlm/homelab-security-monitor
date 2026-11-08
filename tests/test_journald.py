@@ -1,7 +1,5 @@
 import json
-import tempfile
 import unittest
-from pathlib import Path
 
 from hsm.collectors.journald import JournaldCollector, parse_message
 
@@ -44,28 +42,30 @@ class ParseMessageTests(unittest.TestCase):
 
 
 class CollectorTests(unittest.TestCase):
-    def test_collect_builds_events_and_uses_cursor_file(self):
+    def test_collect_builds_events_and_resumes_from_cursor(self):
         lines = [
-            {"SYSLOG_IDENTIFIER": "sshd-session", "__REALTIME_TIMESTAMP": "1762600000000000",
+            {"SYSLOG_IDENTIFIER": "sshd-session", "__REALTIME_TIMESTAMP": "1762600000000000", "__CURSOR": "s=1",
              "MESSAGE": "Failed password for root from 203.0.113.9 port 22 ssh2"},
-            {"SYSLOG_IDENTIFIER": "sshd", "__REALTIME_TIMESTAMP": "1762600001000000",
+            {"SYSLOG_IDENTIFIER": "sshd", "__REALTIME_TIMESTAMP": "1762600001000000", "__CURSOR": "s=2",
              "MESSAGE": list(b"Invalid user x from 203.0.113.9 port 22")},  # byte-array encoding
-            {"SYSLOG_IDENTIFIER": "sudo", "__REALTIME_TIMESTAMP": "1762600002000000", "MESSAGE": "noise"},
+            {"SYSLOG_IDENTIFIER": "sudo", "__REALTIME_TIMESTAMP": "1762600002000000", "__CURSOR": "s=3",
+             "MESSAGE": "noise"},
         ]
-        seen = {}
+        seen = []
 
         def runner(cmd, timeout):
-            seen["cmd"] = cmd
+            seen.append(cmd)
             return "\n".join(json.dumps(x) for x in lines)
 
-        with tempfile.TemporaryDirectory() as tmp:
-            col = JournaldCollector({"first_run_lookback": "2h"}, Path(tmp), runner)
-            events = col.collect({}, 0)
-            self.assertIn("--since=-2h", seen["cmd"])  # first run: bounded lookback
-            self.assertTrue(any(a.startswith("--cursor-file=") for a in seen["cmd"]))
-            (Path(tmp) / "journal.cursor").write_text("s=abc")
-            col.collect({}, 0)
-            self.assertNotIn("--since=-2h", seen["cmd"])  # later runs resume from the cursor
+        col = JournaldCollector({"first_run_lookback": "2h"}, runner)
+        state: dict = {}
+        events = col.collect(state, 0)
+        self.assertIn("--since=-2h", seen[0])
+        self.assertFalse(any("cursor" in a for a in seen[0]))  # never combined with --since
+        self.assertEqual(state["cursor"], "s=3")
+        col.collect(state, 0)
+        self.assertIn("--after-cursor=s=3", seen[1])
+        self.assertNotIn("--since=-2h", seen[1])
         self.assertEqual([e.kind for e in events], ["ssh.failed_login", "ssh.invalid_user"])
         self.assertEqual(events[0].ts, 1762600000.0)
 
