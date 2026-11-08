@@ -1,0 +1,13 @@
+[Unit]
+Description=Homelab security monitor (one detection pass)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/server/homelab-security-monitor
+Environment=PYTHONPATH=src
+Environment=HSM_CONFIG=%h/server/homelab-security-monitor/config.toml
+# SMTP settings (HSM_SMTP_HOST, HSM_SMTP_USER, ...). The "-" makes the file optional.
+EnvironmentFile=-%h/.config/hsm/env
+ExecStart=/usr/bin/python3 -m hsm run
+NoNewPrivileges=true
+PrivateTmp=true

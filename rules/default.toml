@@ -1,0 +1,182 @@
+# Default detection rules. See README for the syntax.
+# `attack` lists MITRE ATT&CK technique IDs when a rule maps cleanly to one;
+# configuration-drift rules intentionally have none.
+
+# --- SSH ---------------------------------------------------------------------
+
+[[rule]]
+id = "HSM-001"
+title = "SSH brute force"
+description = "Repeated failed SSH logins from one source."
+severity = "high"
+attack = ["T1110"]
+kind = "ssh.failed_login"
+threshold = 5
+window = "10m"
+group_by = ["src_ip"]
+
+[[rule]]
+id = "HSM-002"
+title = "SSH probing of non-existent users"
+severity = "medium"
+attack = ["T1110.001"]
+kind = "ssh.invalid_user"
+threshold = 3
+window = "10m"
+group_by = ["src_ip"]
+
+[[rule]]
+id = "HSM-003"
+title = "SSH login from outside tailnet and LAN"
+description = "The server is meant to be reachable only through Tailscale and the local network."
+severity = "critical"
+attack = ["T1078", "T1021.004"]
+kind = "ssh.accepted"
+group_by = ["user", "src_ip"]
+cooldown = "10m"
+[rule.match]
+src_ip = "notcidr:100.64.0.0/10,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,127.0.0.0/8,::1,fd7a:115c:a1e0::/48"
+
+# --- sudo --------------------------------------------------------------------
+
+[[rule]]
+id = "HSM-004"
+title = "Repeated sudo authentication failures"
+severity = "medium"
+attack = ["T1548.003"]
+kind = "sudo.auth_failure"
+threshold = 3
+window = "10m"
+group_by = ["user"]
+
+[[rule]]
+id = "HSM-005"
+title = "sudo attempted by a user not in sudoers"
+severity = "high"
+attack = ["T1548.003"]
+kind = "sudo.not_in_sudoers"
+group_by = ["user"]
+
+# --- firewall ----------------------------------------------------------------
+# Needs `ufw logging low` (or higher) so that blocks reach the journal.
+
+[[rule]]
+id = "HSM-006"
+title = "Port scan pattern (many firewall blocks from one source)"
+severity = "medium"
+attack = ["T1046"]
+kind = "net.ufw_block"
+threshold = 20
+window = "5m"
+group_by = ["src_ip"]
+
+# --- Docker ------------------------------------------------------------------
+
+[[rule]]
+id = "HSM-010"
+title = "Container exited with an error"
+description = "Exit code 0 (clean) and 143 (SIGTERM during a normal stop) are ignored."
+severity = "medium"
+kind = "docker.die"
+group_by = ["container"]
+cooldown = "30m"
+[rule.match]
+exit_code = "re:^(?!(0|143)$)"
+
+[[rule]]
+id = "HSM-011"
+title = "Container killed for running out of memory"
+severity = "medium"
+kind = "docker.oom"
+group_by = ["container"]
+
+[[rule]]
+id = "HSM-012"
+title = "Container became unhealthy"
+severity = "medium"
+kind = "docker.unhealthy"
+group_by = ["container"]
+cooldown = "1h"
+
+[[rule]]
+id = "HSM-013"
+title = "Command executed inside a container"
+description = "Low severity: appears in the timeline, not in mail. Useful when investigating."
+severity = "low"
+attack = ["T1609"]
+kind = "docker.exec"
+group_by = ["container"]
+cooldown = "0s"
+
+[[rule]]
+id = "HSM-014"
+title = "Container created from a never-seen image"
+severity = "high"
+attack = ["T1610", "T1525"]
+kind = "docker.new_image"
+group_by = ["repo"]
+
+# --- Tailscale ---------------------------------------------------------------
+
+[[rule]]
+id = "HSM-020"
+title = "New device on the tailnet"
+severity = "high"
+attack = ["T1133"]
+kind = "tailscale.new_peer"
+group_by = ["host"]
+
+# --- Listening sockets -------------------------------------------------------
+
+[[rule]]
+id = "HSM-030"
+title = "New listener reachable beyond loopback"
+description = "Breaks the design rule: services bind 127.0.0.1 and are published by tailscale serve."
+severity = "high"
+kind = "net.new_listener"
+group_by = ["proto", "port"]
+[rule.match]
+exposed = "true"
+
+[[rule]]
+id = "HSM-031"
+title = "New loopback listener"
+severity = "low"
+kind = "net.new_listener"
+group_by = ["proto", "port"]
+[rule.match]
+exposed = "false"
+
+# --- File integrity ----------------------------------------------------------
+
+[[rule]]
+id = "HSM-040"
+title = "Critical file changed (SSH keys or sshd configuration)"
+severity = "critical"
+attack = ["T1098.004"]
+kind = ["fim.changed", "fim.added", "fim.removed"]
+group_by = ["path"]
+cooldown = "10m"
+[rule.match]
+path = "re:authorized_keys|sshd_config"
+
+[[rule]]
+id = "HSM-041"
+title = "Watched configuration file changed"
+description = "After an intended change, run `hsm baseline --only fim` to accept the new state."
+severity = "medium"
+kind = ["fim.changed", "fim.added", "fim.removed"]
+group_by = ["path"]
+cooldown = "10m"
+[rule.exclude]
+path = "re:authorized_keys|sshd_config"
+
+# --- Self-monitoring ---------------------------------------------------------
+
+[[rule]]
+id = "HSM-900"
+title = "A collector failed (monitoring blind spot)"
+severity = "medium"
+kind = "hsm.collector_error"
+group_by = ["collector"]
+cooldown = "6h"

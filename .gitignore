@@ -1,0 +1,17 @@
+# Local configuration and secrets: never commit
+config.toml
+.env
+*.env
+*.pem
+
+# State and databases
+*.db
+state.json
+*.cursor
+
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+build/
+dist/

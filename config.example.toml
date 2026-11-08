@@ -1,0 +1,38 @@
+# Copy to config.toml (git-ignored) and adjust. SMTP credentials do NOT go here:
+# they are read from environment variables, see README ("Mail").
+
+[general]
+state_dir = "~/.local/state/hsm"   # SQLite database + collector state
+# host = "serveur"                 # shown in mail subjects (default: hostname)
+retention_days = 90
+
+[rules]
+files = ["rules/default.toml"]     # relative to this file; add your own files here
+
+[mail]
+min_severity = "medium"            # info | low | medium | high | critical
+
+[journald]                         # SSH, sudo, UFW blocks
+enabled = true
+first_run_lookback = "1h"
+
+[docker]
+enabled = true
+
+[tailscale]
+enabled = true
+
+[ports]                            # new listening sockets
+enabled = true
+
+[fim]                              # file integrity; globs allowed, ~ expanded
+enabled = true
+paths = [
+  "~/.ssh/authorized_keys",
+  "/etc/ssh/sshd_config",
+  "/etc/ssh/sshd_config.d/*",
+  "~/.config/systemd/user/*.service",
+  "~/.config/systemd/user/*.timer",
+  "~/server/*/docker-compose.yml",
+  "~/server/firefly-iii/.env",
+]
